@@ -29,4 +29,9 @@ public:
 	// The likelihood (0.0 to 1.0) of attempting to place a clutter mesh in an empty floor cell.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Floor Clutter")
 	float ClutterPlacementChance = 0.25f;
+
+	// --- GAP FILLER TILE (NEW) ---
+	// A specific 1x1 mesh used to fill any remaining empty cells after the main randomized pass.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Floor Tiles")
+	TSoftObjectPtr<UStaticMesh> DefaultFillerTile;
 };

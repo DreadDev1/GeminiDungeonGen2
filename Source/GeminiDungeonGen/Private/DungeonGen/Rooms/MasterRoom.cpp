@@ -254,25 +254,25 @@ void AMasterRoom::GenerateFloorAndInterior()
 		return;
 	}
 
-	// 1. Iterate over the grid (X, Y) to fill the floor
+    // --- PASS 1: WEIGHTED AND LARGE MESH PLACEMENT (Your existing logic) ---
+
 	for (int32 Y = 0; Y < GridSize.Y; ++Y)
 	{
 		for (int32 X = 0; X < GridSize.X; ++X)
 		{
 			const int32 Index = Y * GridSize.X + X;
 			
-			// Check if this cell is already occupied (e.g., by a larger mesh placed earlier)
+			// If cell is occupied, skip to the next
 			if (InternalGridState[Index] != EGridCellType::ECT_Empty)
 			{
 				continue;
 			}
 			
-			// --- A. Weighted Random Selection ---
+			// A. Weighted Random Selection (Prioritizes large/styled meshes)
 			const FMeshPlacementInfo* MeshToPlaceInfo = SelectWeightedMesh(FloorData->FloorTilePool, RandomStream);
 			
 			if (!MeshToPlaceInfo || MeshToPlaceInfo->MeshAsset.IsPending())
 			{
-				// If no mesh selected or asset still loading, skip
 				if (MeshToPlaceInfo) MeshToPlaceInfo->MeshAsset.LoadSynchronous();
 				continue;
 			}
@@ -282,28 +282,22 @@ void AMasterRoom::GenerateFloorAndInterior()
 
 			bool bCanPlace = true;
 
-			// 2. Select Rotation and Calculate Rotated Footprint (The Fix)
+			// B. Select Rotation and Calculate Rotated Footprint (REQUIRED)
 			const int32 RandomRotationIndex = RandomStream.RandRange(0, MeshToPlaceInfo->AllowedRotations.Num() - 1);
 			const float YawRotation = (float)MeshToPlaceInfo->AllowedRotations[RandomRotationIndex];
 
 			FIntPoint RotatedFootprint = MeshToPlaceInfo->GridFootprint;
-			
-			// Check for 90 or 270 degree rotation (where X and Y dimensions swap)
 			if (FMath::IsNearlyEqual(YawRotation, 90.0f) || FMath::IsNearlyEqual(YawRotation, 270.0f))
 			{
-				// Swap the dimensions for the footprint check
 				RotatedFootprint = FIntPoint(MeshToPlaceInfo->GridFootprint.Y, MeshToPlaceInfo->GridFootprint.X);
 			}
 
-			// --- B. Footprint and Bounds Check ---
-			
-			// Check if the rotated mesh fits within the room bounds
+			// C. Bounds and Occupancy Check (Uses RotatedFootprint)
 			if (X + RotatedFootprint.X > GridSize.X || Y + RotatedFootprint.Y > GridSize.Y)
 			{
 				bCanPlace = false;
 			}
 			
-			// Check if any cells within the ROTATED footprint are already occupied (The Overlap Fix)
 			if (bCanPlace)
 			{
 				for (int32 FootY = 0; FootY < RotatedFootprint.Y; ++FootY)
@@ -311,25 +305,22 @@ void AMasterRoom::GenerateFloorAndInterior()
 					for (int32 FootX = 0; FootX < RotatedFootprint.X; ++FootX)
 					{
 						int32 FootIndex = (Y + FootY) * GridSize.X + (X + FootX);
-						
-						// Crucial Check: Ensure the cell is valid and EMPTY
 						if (InternalGridState.IsValidIndex(FootIndex) && InternalGridState[FootIndex] != EGridCellType::ECT_Empty)
 						{
 							bCanPlace = false;
-							break; // Exit FootX loop
+							break;
 						}
 					}
-					if (!bCanPlace) break; // Exit FootY loop
+					if (!bCanPlace) break;
 				}
 			}
 
-			// --- C. Placement and Grid Marking ---
+			// D. Placement and Grid Marking
 			if (bCanPlace)
 			{
 				UHierarchicalInstancedStaticMeshComponent* HISM = GetOrCreateHISM(Mesh);
 				if (HISM)
 				{
-					// Calculate position (Center Pivot assumption for floor tiles)
 					FVector CenterLocation = FVector(
 						(X + RotatedFootprint.X / 2.0f) * CELL_SIZE, 
 						(Y + RotatedFootprint.Y / 2.0f) * CELL_SIZE, 
@@ -339,7 +330,7 @@ void AMasterRoom::GenerateFloorAndInterior()
 					FTransform InstanceTransform(FRotator(0.0f, YawRotation, 0.0f), CenterLocation);
 					HISM->AddInstance(InstanceTransform);
 					
-					// Mark all cells within the ROTATED footprint as occupied
+					// Mark all cells as occupied
 					for (int32 FootY = 0; FootY < RotatedFootprint.Y; ++FootY)
 					{
 						for (int32 FootX = 0; FootX < RotatedFootprint.X; ++FootX)
@@ -350,11 +341,46 @@ void AMasterRoom::GenerateFloorAndInterior()
 					}
 				}
 			}
-			// If placement failed, the loop naturally proceeds to the next cell (X+1, Y).
 		}
 	}
-	
-	// --- TO BE IMPLEMENTED LATER: CLUTTER AND DESIGNER OVERRIDES PASSES ---
+
+
+    // --- PASS 2: GAP FILLING WITH DEFAULT 1x1 TILE (NEW LOGIC) ---
+    
+    UStaticMesh* FillerMesh = FloorData->DefaultFillerTile.LoadSynchronous();
+    if (FillerMesh)
+    {
+        UHierarchicalInstancedStaticMeshComponent* HISM = GetOrCreateHISM(FillerMesh);
+        
+        for (int32 Y = 0; Y < GridSize.Y; ++Y)
+        {
+            for (int32 X = 0; X < GridSize.X; ++X)
+            {
+                int32 Index = Y * GridSize.X + X;
+                
+                // Only place if the cell is still empty after Pass 1
+                if (InternalGridState[Index] == EGridCellType::ECT_Empty)
+                {
+                    // Placement is trivial since it's a 1x1 tile
+                    FVector CenterLocation = FVector(
+                        (X + 0.5f) * CELL_SIZE, // 0.5 for center of the 1x1 cell
+                        (Y + 0.5f) * CELL_SIZE, 
+                        0.0f
+                    );
+                    
+                    FTransform InstanceTransform(FRotator::ZeroRotator, CenterLocation);
+                    HISM->AddInstance(InstanceTransform);
+                    
+                    // Mark cell as occupied
+                    InternalGridState[Index] = EGridCellType::ECT_FloorMesh; 
+                }
+            }
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("DefaultFillerTile is missing. Gaps will remain."));
+    }
 }
 
 void AMasterRoom::GenerateWallsAndDoors()
