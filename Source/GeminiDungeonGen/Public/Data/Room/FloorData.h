@@ -20,6 +20,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Floor Tiles")
 	TArray<FMeshPlacementInfo> FloorTilePool;
 
+	// --- EDGE CONSTRAINT TILES (NEW) ---
+	// Meshes specifically allowed to be placed along the absolute grid perimeter (X=0, X=Max, Y=0, Y=Max).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Floor Tiles")
+	TArray<FMeshPlacementInfo> EdgeTilePool;
+	
 	// --- Floor Clutter / Detail Meshes ---
 	
 	// A separate pool for smaller details or clutter placed randomly on top of the main tiles.

@@ -19,16 +19,13 @@ public:
 
 	// --- Generation Parameters ---
 
-	// The Data Asset defining this room's layout and content rules
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Generation")
 	URoomData* RoomDataAsset;
 
-	// The seed used for generation (set by DungeonManager, tweakable by designer)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Generation|Seed")
 	int32 GenerationSeed = 1337;
 
 	// --- EDITOR ONLY: Generate Button ---
-	// Changing this boolean property triggers the RegenerateRoom function in the editor.
 	UPROPERTY(EditAnywhere, Category = "Generation|Debug")
 	bool bGenerateRoom = false; 
 
@@ -50,34 +47,35 @@ private:
 	TMap<UStaticMesh*, UHierarchicalInstancedStaticMeshComponent*> MeshToHISMMap;
 	
 protected:
-	virtual void PostLoad() override;
-	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
-	
-	// Override used to monitor changes in the Details Panel (for the bGenerateRoom button trick)
+
+
+#if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PostLoad() override;
+#endif
 	
 	// --- Core Generation Functions ---
 
-	// Selects one FMeshPlacementInfo struct based on placement weights
-	const FMeshPlacementInfo* SelectWeightedMesh(const TArray<FMeshPlacementInfo>& MeshPool, FRandomStream& Stream);
-	
-	// UFUNCTION to be called by the DungeonManager (or designer in editor)
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Generation")
 	void RegenerateRoom();
-	
+
 	// Logic for clearing and resetting all HISM components
 	void ClearAndResetComponents();
-	
-	// Logic for getting or creating the HISM component for a given mesh
 	UHierarchicalInstancedStaticMeshComponent* GetOrCreateHISM(UStaticMesh* Mesh);
-	
-	// Core grid packing logic (for floor and interior meshes)
+
+	// New helper for easy world coordinate translation
+	FVector GetCellCenterWorldLocation(int32 X, int32 Y) const;
+
+	// Floor and Interior Logic
+	void ExecuteForcedPlacements(FRandomStream& Stream);
 	void GenerateFloorAndInterior();
-	
+
 	// 1D wall placement logic using WallDataAsset
 	void GenerateWallsAndDoors();
-
-	void ExecuteForcedPlacements(FRandomStream& Stream);
+	
+	const FMeshPlacementInfo* SelectWeightedMesh(const TArray<FMeshPlacementInfo>& MeshPool, FRandomStream& Stream);
+	
+	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	// Helper function for drawing the debug grid in the editor
 	void DrawDebugGrid();
