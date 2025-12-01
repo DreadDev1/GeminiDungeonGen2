@@ -24,7 +24,7 @@ public:
 	URoomData* RoomDataAsset;
 
 	// The seed used for generation (set by DungeonManager, tweakable by designer)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Generation")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Generation|Seed")
 	int32 GenerationSeed = 1337;
 
 	// --- EDITOR ONLY: Generate Button ---
@@ -35,11 +35,11 @@ public:
 	// --- Designer Override Control ---
 
 	// Array of specific 100cm cell coordinates the designer wants to force empty.
-	UPROPERTY(EditAnywhere, Category = "Designer Overrides|Floor")
+	UPROPERTY(EditAnywhere, Category = "Generation|Designer Overrides|Floor")
 	TArray<FIntPoint> ForcedEmptyFloorCells;
 	
 	// Array of specific meshes to force-place at coordinates (Hybrid System Control)
-	UPROPERTY(EditAnywhere, Category = "Designer Overrides|Floor")
+	UPROPERTY(EditAnywhere, Category = "Generation|Designer Overrides|Floor")
 	TMap<FIntPoint, FMeshPlacementInfo> ForcedInteriorPlacements;
 
 private:
@@ -76,6 +76,8 @@ protected:
 	
 	// 1D wall placement logic using WallDataAsset
 	void GenerateWallsAndDoors();
+
+	void ExecuteForcedPlacements(FRandomStream& Stream);
 	
 	// Helper function for drawing the debug grid in the editor
 	void DrawDebugGrid();

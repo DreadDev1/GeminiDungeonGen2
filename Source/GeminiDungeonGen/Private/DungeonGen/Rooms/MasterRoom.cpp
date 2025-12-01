@@ -254,7 +254,23 @@ void AMasterRoom::GenerateFloorAndInterior()
 		return;
 	}
 
-    // --- PASS 1: WEIGHTED AND LARGE MESH PLACEMENT (Your existing logic) ---
+    // --- PASS 0: DESIGNER OVERRIDES: FORCED PLACEMENTS (NEW) ---
+    ExecuteForcedPlacements(RandomStream);
+    
+    // --- DESIGNER OVERRIDES: FORCED EMPTY CELLS (NEW) ---
+    // Mark specific cells as reserved (to be empty) before Pass 1 begins.
+    for (const FIntPoint& EmptyCoord : ForcedEmptyFloorCells)
+    {
+        int32 Index = EmptyCoord.Y * GridSize.X + EmptyCoord.X;
+        if (InternalGridState.IsValidIndex(Index) && InternalGridState[Index] == EGridCellType::ECT_Empty)
+        {
+            // Mark cell as a reserved boundary/empty slot
+            InternalGridState[Index] = EGridCellType::ECT_Wall; // Using Wall type to indicate reserved boundary for now
+        }
+    }
+
+
+    // --- PASS 1: WEIGHTED AND LARGE MESH PLACEMENT (Modified to check overrides) ---
 
 	for (int32 Y = 0; Y < GridSize.Y; ++Y)
 	{
@@ -262,13 +278,13 @@ void AMasterRoom::GenerateFloorAndInterior()
 		{
 			const int32 Index = Y * GridSize.X + X;
 			
-			// If cell is occupied, skip to the next
+			// If cell is occupied OR marked as forced empty (ECT_Wall), skip to the next
 			if (InternalGridState[Index] != EGridCellType::ECT_Empty)
 			{
 				continue;
 			}
 			
-			// A. Weighted Random Selection (Prioritizes large/styled meshes)
+			// ... (A. Weighted Random Selection remains the same) ...
 			const FMeshPlacementInfo* MeshToPlaceInfo = SelectWeightedMesh(FloorData->FloorTilePool, RandomStream);
 			
 			if (!MeshToPlaceInfo || MeshToPlaceInfo->MeshAsset.IsPending())
@@ -282,8 +298,8 @@ void AMasterRoom::GenerateFloorAndInterior()
 
 			bool bCanPlace = true;
 
-			// B. Select Rotation and Calculate Rotated Footprint (REQUIRED)
-			const int32 RandomRotationIndex = RandomStream.RandRange(0, MeshToPlaceInfo->AllowedRotations.Num() - 1);
+			// ... (B. Select Rotation and Calculate Rotated Footprint remains the same) ...
+            const int32 RandomRotationIndex = RandomStream.RandRange(0, MeshToPlaceInfo->AllowedRotations.Num() - 1);
 			const float YawRotation = (float)MeshToPlaceInfo->AllowedRotations[RandomRotationIndex];
 
 			FIntPoint RotatedFootprint = MeshToPlaceInfo->GridFootprint;
@@ -292,7 +308,7 @@ void AMasterRoom::GenerateFloorAndInterior()
 				RotatedFootprint = FIntPoint(MeshToPlaceInfo->GridFootprint.Y, MeshToPlaceInfo->GridFootprint.X);
 			}
 
-			// C. Bounds and Occupancy Check (Uses RotatedFootprint)
+			// C. Bounds and Occupancy Check (Crucially checks against all existing occupations, including forced items)
 			if (X + RotatedFootprint.X > GridSize.X || Y + RotatedFootprint.Y > GridSize.Y)
 			{
 				bCanPlace = false;
@@ -305,6 +321,8 @@ void AMasterRoom::GenerateFloorAndInterior()
 					for (int32 FootX = 0; FootX < RotatedFootprint.X; ++FootX)
 					{
 						int32 FootIndex = (Y + FootY) * GridSize.X + (X + FootX);
+						
+						// The main check: if the cell is NOT empty (it could be ECT_FloorMesh, ECT_Wall/Forced Empty)
 						if (InternalGridState.IsValidIndex(FootIndex) && InternalGridState[FootIndex] != EGridCellType::ECT_Empty)
 						{
 							bCanPlace = false;
@@ -315,7 +333,7 @@ void AMasterRoom::GenerateFloorAndInterior()
 				}
 			}
 
-			// D. Placement and Grid Marking
+			// D. Placement and Grid Marking (remains the same)
 			if (bCanPlace)
 			{
 				UHierarchicalInstancedStaticMeshComponent* HISM = GetOrCreateHISM(Mesh);
@@ -336,7 +354,7 @@ void AMasterRoom::GenerateFloorAndInterior()
 						for (int32 FootX = 0; FootX < RotatedFootprint.X; ++FootX)
 						{
 							int32 FootIndex = (Y + FootY) * GridSize.X + (X + FootX);
-							InternalGridState[FootIndex] = EGridCellType::ECT_FloorMesh;
+							InternalGridState[FootIndex] = EGridCellType::ECT_FloorMesh; 
 						}
 					}
 				}
@@ -345,7 +363,7 @@ void AMasterRoom::GenerateFloorAndInterior()
 	}
 
 
-    // --- PASS 2: GAP FILLING WITH DEFAULT 1x1 TILE (NEW LOGIC) ---
+    // --- PASS 2: GAP FILLING WITH DEFAULT 1x1 TILE (Modified to respect forced empty cells) ---
     
     UStaticMesh* FillerMesh = FloorData->DefaultFillerTile.LoadSynchronous();
     if (FillerMesh)
@@ -358,12 +376,12 @@ void AMasterRoom::GenerateFloorAndInterior()
             {
                 int32 Index = Y * GridSize.X + X;
                 
-                // Only place if the cell is still empty after Pass 1
+                // Only place if the cell is still **completely empty** (not ECT_Wall/Forced Empty)
                 if (InternalGridState[Index] == EGridCellType::ECT_Empty)
                 {
                     // Placement is trivial since it's a 1x1 tile
                     FVector CenterLocation = FVector(
-                        (X + 0.5f) * CELL_SIZE, // 0.5 for center of the 1x1 cell
+                        (X + 0.5f) * CELL_SIZE, 
                         (Y + 0.5f) * CELL_SIZE, 
                         0.0f
                     );
@@ -371,21 +389,116 @@ void AMasterRoom::GenerateFloorAndInterior()
                     FTransform InstanceTransform(FRotator::ZeroRotator, CenterLocation);
                     HISM->AddInstance(InstanceTransform);
                     
-                    // Mark cell as occupied
+                    // Mark cell as ECT_FloorMesh, it is now filled
                     InternalGridState[Index] = EGridCellType::ECT_FloorMesh; 
                 }
             }
         }
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("DefaultFillerTile is missing. Gaps will remain."));
     }
 }
 
 void AMasterRoom::GenerateWallsAndDoors()
 {
 	// Implementation to follow: 1D wall packing logic
+}
+
+void AMasterRoom::ExecuteForcedPlacements(FRandomStream& Stream)
+{
+	if (!RoomDataAsset) return;
+
+	const FIntPoint GridSize = RoomDataAsset->GridSize;
+	
+	// Iterate through the map of designer-forced placements (Pass 0)
+	for (const auto& Pair : ForcedInteriorPlacements)
+	{
+		const FIntPoint StartCoord = Pair.Key;
+		const FMeshPlacementInfo& MeshToPlaceInfo = Pair.Value;
+		
+		bool bCanPlace = true; // Assume placement is possible until proven otherwise
+
+		// 1. Load Mesh and Check Validity
+		UStaticMesh* Mesh = MeshToPlaceInfo.MeshAsset.LoadSynchronous();
+		if (!Mesh)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Forced Placement failed: Mesh asset for (%d, %d) is NULL. Skipping."), StartCoord.X, StartCoord.Y);
+			continue;
+		}
+
+		// 2. Select Rotation and Calculate Rotated Footprint (Uses Stream for rotation)
+		const int32 RandomRotationIndex = Stream.RandRange(0, MeshToPlaceInfo.AllowedRotations.Num() - 1);
+		const float YawRotation = (float)MeshToPlaceInfo.AllowedRotations[RandomRotationIndex];
+
+		FIntPoint RotatedFootprint = MeshToPlaceInfo.GridFootprint;
+		if (FMath::IsNearlyEqual(YawRotation, 90.0f) || FMath::IsNearlyEqual(YawRotation, 270.0f))
+		{
+			// Swap dimensions for 90 or 270 degree rotation
+			RotatedFootprint = FIntPoint(MeshToPlaceInfo.GridFootprint.Y, MeshToPlaceInfo.GridFootprint.X);
+		}
+
+		// 3. Bounds Check
+		if (StartCoord.X < 0 || StartCoord.Y < 0 || 
+			StartCoord.X + RotatedFootprint.X > GridSize.X || 
+			StartCoord.Y + RotatedFootprint.Y > GridSize.Y)
+		{
+			bCanPlace = false;
+			UE_LOG(LogTemp, Warning, TEXT("Forced Placement failed: Mesh at (%d, %d) is out of bounds."), StartCoord.X, StartCoord.Y);
+		}
+		
+		// 4. Overlap Check (Checks against previously placed forced items)
+		if (bCanPlace)
+		{
+			for (int32 FootY = 0; FootY < RotatedFootprint.Y; ++FootY)
+			{
+				for (int32 FootX = 0; FootX < RotatedFootprint.X; ++FootX)
+				{
+					int32 FootIndex = (StartCoord.Y + FootY) * GridSize.X + (StartCoord.X + FootX);
+					
+					// If the target cell is already occupied (by another forced placement), fail.
+					if (InternalGridState.IsValidIndex(FootIndex) && InternalGridState[FootIndex] != EGridCellType::ECT_Empty)
+					{
+						bCanPlace = false;
+						UE_LOG(LogTemp, Warning, TEXT("Forced Placement failed: Mesh at (%d, %d) overlaps existing forced item."), StartCoord.X, StartCoord.Y);
+						break;
+					}
+				}
+				if (!bCanPlace) break;
+			}
+		}
+
+		// 5. Placement and Grid Marking (Executed ONLY if all checks passed)
+		if (bCanPlace)
+		{
+			UHierarchicalInstancedStaticMeshComponent* HISM = GetOrCreateHISM(Mesh);
+			if (HISM)
+			{
+				// Calculate position (Center Pivot assumed)
+				FVector CenterLocation = FVector(
+					(StartCoord.X + RotatedFootprint.X / 2.0f) * CELL_SIZE, 
+					(StartCoord.Y + RotatedFootprint.Y / 2.0f) * CELL_SIZE, 
+					0.0f
+				);
+				
+				FTransform InstanceTransform(FRotator(0.0f, YawRotation, 0.0f), CenterLocation);
+				
+				// CRITICAL: Add the instance visually
+				HISM->AddInstance(InstanceTransform);
+				
+				// CRITICAL: Mark all covered cells as occupied (Red in debug view)
+				for (int32 FootY = 0; FootY < RotatedFootprint.Y; ++FootY)
+				{
+					for (int32 FootX = 0; FootX < RotatedFootprint.X; ++FootX)
+					{
+						int32 FootIndex = (StartCoord.Y + FootY) * GridSize.X + (StartCoord.X + FootX);
+						
+						if (InternalGridState.IsValidIndex(FootIndex)) 
+						{
+							InternalGridState[FootIndex] = EGridCellType::ECT_FloorMesh; 
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // Editor-only overrides for lifecycle management

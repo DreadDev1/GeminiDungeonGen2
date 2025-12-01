@@ -42,9 +42,9 @@ struct FMeshPlacementInfo
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mesh Info")
 	FIntPoint GridFootprint = FIntPoint(1, 1);
 
-	// Relative weight for randomization (higher means more likely to be chosen)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mesh Info")
-	float PlacementWeight = 1.0f;
+	// Relative weight for randomization (NEW: Clamped between 0.0 and 10.0)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mesh Info", meta=(ClampMin="0.0", ClampMax="10.0", UIMin="0.0", UIMax="10.0"))
+	float PlacementWeight = 1.0f; // Default remains 1.0f
 
 	// If the mesh is non-square, define allowed rotations (e.g., 0 and 90)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mesh Info")
@@ -73,6 +73,7 @@ struct FWallModule
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Meshes")
 	TSoftObjectPtr<UStaticMesh> TopMesh;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Info")
-	float PlacementWeight = 1.0f; 
+	// Placement weight (NEW: Clamped between 0.0 and 10.0)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Info", meta=(ClampMin="0.0", ClampMax="10.0", UIMin="0.0", UIMax="10.0"))
+	float PlacementWeight = 1.0f;
 };
